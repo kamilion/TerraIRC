@@ -1,28 +1,19 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Text.RegularExpressions;
-using System.Net;
 using System.IO;
-using System.Net.Sockets;
+using System.Text;
 using System.Threading;
-using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Content;
-using System.Collections;
+using tMod_v3.Events;
 using Terraria;
-using TerrariaAPI;
-using TerrariaAPI.Hooks;
-using System.ComponentModel;
+using System.Collections;
 
-namespace TerraIRC
+namespace tMod_v3
 {
-    [APIVersion(1, 5)]
-    public class TerraIRC : TerrariaPlugin
+    internal class TerraIRC : Plugin
     {
         // Settings
-        public Dictionary<string, string> settings;
-        public string settingsPath = "terrairc.txt";
+        public static Dictionary<string, string> settings;
+        public static string settingsPath = "terrairc.txt";
 
         // IRC fields
         public static string server;
@@ -34,11 +25,9 @@ namespace TerraIRC
         public static string channel;
         public static bool enableServerLinking;
         private Thread irc;
-        public bool sendCommandsIRC;
         public static bool rawConsole;
         public static string commandPrefix;
         public static bool enableFingering;
-        public static string whitelistPath;
         public static string serverLinking_server;
         public static string serverLinking_SID;
         public static string serverLinking_Pass;
@@ -49,49 +38,26 @@ namespace TerraIRC
         public static ArrayList Clients;
         public static Dictionary<string, Channel> Channels;
 
-        public override string Name
-        {
-            get { return "TerraIRC"; }
-        }
+        public override string Name { get { return "TerraIRC"; } }
+        public override Version Version { get { return new Version(1, 2); } }
+        public override string Author { get { return "PwnCraft"; } }
 
-        public override Version Version
+        public TerraIRC()
         {
-            get { return new Version(1, 2); }
-        }
-
-        public override string Author
-        {
-            get { return "PwnCraft"; }
-        }
-
-        public override string Description
-        {
-            get { return "Terraria <-> IRC link bot"; }
-        }
-
-        public TerraIRC(Main game)
-            : base(game)
-        {
-        }
-
-        public override void Initialize()
-        {
-            
-            ServerHooks.Chat += OnChat;
-            NetHooks.GreetPlayer += OnGreetPlayer;
-            ServerHooks.Leave += OnLeave;
             loadSettings();
-            this.irc = new Thread(new ThreadStart(startIRC));
-            this.irc.Start();
             Console.WriteLine("Connecting to " + server + ":" + port);
             Console.WriteLine("[TerraIRC] " + Version + " loaded!");
+
+            MessageBufferMod.ChatMessageReceived += new PacketReceivedEventHandler(OnPlayerChat);
+            MessageBufferMod.SpawnPlayerReceived += new PacketReceivedEventHandler(OnPlayerJoin);
+            MessageBufferMod.PlayerDeathReceived += new PacketReceivedEventHandler(OnPlayerDeath);
+
+            this.irc = new Thread(new ThreadStart(startIRC));
+            this.irc.Start();
         }
 
-        public override void DeInitialize()
+        public void Unload()
         {
-            ServerHooks.Chat -= OnChat;
-            NetHooks.GreetPlayer -= OnGreetPlayer;
-            ServerHooks.Leave -= OnLeave;
             IRC.send("QUIT :Unloaded!");
             irc.Abort();
             Console.WriteLine("[TerraIRC] Unloaded :(");
@@ -102,39 +68,33 @@ namespace TerraIRC
             IRC.connect(server, port, authtype, authpass, nickname, username, channel);
         }
 
-        private void OnChat(messageBuffer msg, int ply, string text, HandledEventArgs e)
+        public void OnPlayerChat(object sender, PacketReceivedEventArgs args)
         {
-            string p = Main.player[ply].name;
-            if (text.StartsWith("/"))
-            {
-                return;
-            }
-            else
-            {
-                IRC.send("PRIVMSG " + channel + " :(" + p + ") " + text);
-            }
+            string chatUser = Session.Sessions[args.Player].Username;
+            string chatUserText = Encoding.ASCII.GetString(args.ReadBuffer, args.Start + 5, args.Length - 5);
+            if (chatUserText.Substring(0, 1) == "/") return;
+            IRC.send("PRIVMSG " + channel + " :(" + chatUser + ") " + chatUserText);
         }
 
-        //public override void onPlayerDeath(PlayerEvent ev)
-        //{
-        //    base.onPlayerDeath(ev);
-        //    string p = ev.getPlayer().name;
-        //    IRC.send("PRIVMSG " + channel + " :" + p + " was slain..");
-        //}
-
-        private void OnGreetPlayer(int who, HandledEventArgs e)
+        public void OnPlayerDeath(object sender, PacketReceivedEventArgs args)
         {
-            string p = Main.player[who].name;
-            IRC.send("PRIVMSG " + channel + " :[" + p + " connected]");
+            string deadUser = Session.Sessions[args.Player].Username;
+            IRC.send("PRIVMSG " + channel + " :" + deadUser + " was slain..");
         }
 
-        private void OnLeave(int who)
+        public void OnPlayerJoin(object sender, PacketReceivedEventArgs args)
         {
-            string p = Main.player[who].name;
-            IRC.send("PRIVMSG " + channel + " :[" + p + " disconnected]");
+            string joinUser = Session.Sessions[args.Player].Username;
+            IRC.send("PRIVMSG " + channel + " :[" + joinUser + " connected]");
         }
 
-        protected string getSetting(string setting, string settingValue)
+        public void OnPlayerLeave(object sender, PacketReceivedEventArgs args)
+        {
+            string leaveUser = Session.Sessions[args.Player].Username;
+            IRC.send("PRIVMSG " + channel + " :[" + leaveUser + " disconnected]");
+        }
+
+        protected static string getSetting(string setting, string settingValue)
         {
             try
             {
@@ -148,14 +108,14 @@ namespace TerraIRC
                 TextWriter t = new StreamWriter(settingsPath, true);
                 t.WriteLine(setting + "=" + settingValue);
                 t.Close();
-                this.settings.Add(setting, settingValue);
+                settings.Add(setting, settingValue);
                 return settingValue;
             }
         }
 
         public static void loadSettings()
         {
-            this.settings = new Dictionary<string, string>();
+            settings = new Dictionary<string, string>();
             if (!File.Exists(settingsPath))
             {
                 TextWriter writer = new StreamWriter(settingsPath);
@@ -214,160 +174,11 @@ namespace TerraIRC
                     Channels = new Dictionary<string, Channel>();
                     Clients = new ArrayList();
                 }
-                
+
             }
             catch (NullReferenceException exception)
             {
                 Console.WriteLine("[TerraIRC] Error: " + exception.ToString());
-            }
-        }
-
-    }
-    public static class IRC
-    {
-        public static StreamWriter writer;
-        public static void send(string text)
-        {
-            writer.WriteLine(text);
-            writer.Flush();
-            if (TerraIRC.rawConsole == true)
-            {
-                Console.WriteLine("[TerraIRC] IRC Raw: " + text);
-            }
-        }
-        
-        public static void connect(string server, int port, string authtype, string authpass, string nick, string user, string channel)
-        {
-            char meme;
-            meme = Convert.ToChar(1);
-            NetworkStream stream;
-            TcpClient irc;
-            string inputLine;
-            StreamReader reader;
-            string nickname;
-            try
-            {
-                Console.WriteLine("CONNETING!");
-                irc = new TcpClient(server, port);
-                stream = irc.GetStream();
-                reader = new StreamReader(stream);
-                writer = new StreamWriter(stream);
-                string[] users = user.Split(' ');
-                send("USER " + users[0] + " 0 * :" + user);
-                send("NICK " + nick);
-
-                while (true)
-                {
-                    while ((inputLine = reader.ReadLine()) != null)
-                    {
-                        string[] arr = inputLine.Split(' ');
-                        //Console.WriteLine(inputLine);
-                        if (arr[1] == "376")
-                        {
-                            send("JOIN " + channel);
-                        }
-                        else if (inputLine.EndsWith("JOIN :" + channel))
-                        {
-                            //get nick
-                            nickname = inputLine.Substring(1, inputLine.IndexOf("!") - 1);
-                            foreach (Player p in Main.player)
-                            {
-                                if (p.name.Length > 0)
-                                {
-                                    int ply = p.whoAmi;
-                                    string message = "[IRC] <" + nickname + "> has joined IRC";
-                                    // pre 1.05
-                                    // NetMessage.SendData(0x19, ply, -1, message, 255, 0f, 255f, 0f);
-                                    NetMessage.SendData((int)PacketTypes.ChatText, ply, -1, message, 255, 0f, 255f, 0f);
-                                }
-                            }
-
-                        }
-                        else if (inputLine.EndsWith("PART :" + channel))
-                        {
-                            //get nick
-                            nickname = inputLine.Substring(1, inputLine.IndexOf("!") - 1);
-                            foreach (Player p in Main.player)
-                            {
-                                if (p.name.Length > 0)
-                                {
-                                    int ply = p.whoAmi;
-                                    string message = "[IRC] <" + nickname + "> has left IRC";
-                                    // pre 1.05
-                                    // NetMessage.SendData(0x19, ply, -1, message, 255, 0f, 255f, 0f);
-                                    NetMessage.SendData((int)PacketTypes.ChatText, ply, -1, message, 255, 0f, 255f, 0f);
-                                }
-                            }
-
-                        }
-                        else if (inputLine.StartsWith("PING"))
-                        {
-                            send("PONG " + arr[1]);
-                        }
-                        else if ((arr[1] == "PRIVMSG") && (arr[2].ToLower() == channel.ToLower()))
-                        {
-                            Regex text = new Regex(@":(.*) PRIVMSG (.*) :(.*)");
-                            Match match = text.Match(inputLine);
-                            if (match.Success)
-                            {
-                                //get nick
-                                nickname = inputLine.Substring(1, inputLine.IndexOf("!") - 1);
-
-                                if (match.Groups[3].Value.StartsWith(TerraIRC.commandPrefix))
-                                {
-                                    string command = match.Groups[3].Value.Remove(0, 1).ToLower();
-                                    string[] commandArray = match.Groups[3].Value.Split(' ');
-                                    Console.WriteLine(match.Groups[3].Value);
-                                    switch (command)
-                                    {
-                                        case "players":
-                                            IRCCommands.Players();
-                                                break;
-
-                                        case "finger":
-                                            IRCCommands.Finger();
-                                                break;
-
-                                        case "terrairc":
-                                                IRCCommands.reloadSettings();
-                                                break;
-                                    }
-                                }
-                                else
-                                {
-                                    if (nickname != TerraIRC.nickname)
-                                    {
-                                        foreach (Player p in Main.player)
-                                        {
-                                            if (p.name.Length > 0)
-                                            {
-                                                string ircMsg = "[IRC] <" + nickname + "> " + match.Groups[3].Value;
-                                                int ply = p.whoAmi;
-                                                string message = ircMsg.Replace(meme, '*');
-                                                // pre 1.05
-                                                // NetMessage.SendData(0x19, ply, -1, message, 255, 0f, 255f, 0f);
-                                                NetMessage.SendData((int)PacketTypes.ChatText, ply, -1, message, 255, 0f, 255f, 0f);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    // Close all streams
-                    writer.Close();
-                    reader.Close();
-                    irc.Close();
-                }
-            }
-            catch (EndOfStreamException e)
-            {
-                // Show the exception, sleep for a while and try to establish a new connection to irc server
-                Console.WriteLine(e.ToString());
-
-                /*string[] argv = { };
-                connect(argv[0], int.Parse(argv[1]), argv[2], argv[3], argv[4], argv[5], argv[6]);*/
-
             }
         }
     }

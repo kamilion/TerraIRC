@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
-namespace TerraIRC
+namespace tMod_v3
 {
     public class Event
     {

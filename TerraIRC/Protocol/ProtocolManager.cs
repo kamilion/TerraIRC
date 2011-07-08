@@ -7,7 +7,7 @@ using System.Reflection;
 using System.IO;
 
 
-namespace TerraIRC
+namespace tMod_v3
 {
     public class Protocol
     {

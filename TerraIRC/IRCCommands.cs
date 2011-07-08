@@ -3,9 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Terraria;
+using tMod_v3.Events;
 using System.IO;
 
-namespace TerraIRC
+namespace tMod_v3
 {
     class IRCCommands
     {
@@ -30,18 +31,24 @@ namespace TerraIRC
         {
             string str = "";
             int pCount = 0;
-            foreach (Player pActive in Main.player)
+            dynamic[] player5 = MainMod.Player;
+            if (player5 == null) return;
+            for (int k = 0; k < player5.Length; k++)
             {
+                dynamic pActive = player5[k];
                 if (pActive.active)
                 {
-                    pCount++;
-                    if (str == "")
+                    if (pActive.name.Length > 0)
                     {
-                        str = str + pActive.name;
-                    }
-                    else
-                    {
-                        str = str + ", " + pActive.name;
+                        pCount++;
+                        if (str == "")
+                        {
+                            str = str + pActive.name;
+                        }
+                        else
+                        {
+                            str = str + ", " + pActive.name;
+                        }
                     }
                 }
             }
@@ -53,15 +60,6 @@ namespace TerraIRC
             {
                 IRC.send("PRIVMSG " + TerraIRC.channel + " :Current players: " + str);
             }
-        }
-
-        public static void Whitelist(string player)
-        {
-            string savePath = Path.Combine("tshock", "whitelist.txt");
-            TextWriter tw = new StreamWriter(savePath, true);
-            tw.WriteLine(player);
-            tw.Close();
-            IRC.send("PRIVMSG " + TerraIRC.channel + " :\"" + player + "\" added to the whitelist!");
         }
 
         public static void reloadSettings()

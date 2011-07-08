@@ -2,10 +2,9 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using tMod_v3;
 
-
-
-namespace TerraIRC
+namespace tMod_v3
 {
     public class ChannelMessageEvent : Event
     {
